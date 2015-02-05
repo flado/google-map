@@ -1,0 +1,7 @@
+{
+  "name": "google-map#gh-pages",
+  "private": true,
+  "dependencies": {
+    "google-map": "GoogleWebComponents/google-map#master"
+  }
+}
