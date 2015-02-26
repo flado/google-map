@@ -2,6 +2,10 @@
 
 <link rel="import" href="../polymer/polymer.html">
 
+<link rel="import" href="../core-icons/core-icons.html">
+<link rel="import" href="../core-field/core-field.html">
+
+
 <!--
 Provides Google Maps Places API functionality.
 
@@ -35,7 +39,25 @@ Fired when the search element returns a result.
   @param {number} detail.longitude Longitude of the result.
   @param {bool} detail.show Whether to show the result on the map.
 -->
-<polymer-element name="google-map-search" attributes="query result map">
+<polymer-element name="google-map-search" attributes="query result map input">
+
+<template>
+ <template if="{{input}}">
+    <style>
+        core-field {
+          border: 1px solid #ddd;
+          margin: 10px;
+          height: 40px;
+        }
+    </style>
+
+    <core-field center horizontal layout>
+      <core-icon icon="search"></core-icon>
+      <input id="pac-input" flex placeholder="search address"></input>
+    </core-field>
+  </template>
+</template>
+
   <script>
     Polymer('google-map-search', {
 
@@ -69,16 +91,99 @@ Fired when the search element returns a result.
         map: 'search'
       },
 
+      autocomplete: null,
+
+
+      ready: function() {
+        console.log('## google-map-search.ready() ###');
+        if (this.input && this.map) { //this means the map is loaded
+          this.autocomplete = new google.maps.places.Autocomplete(this.$['pac-input']);
+          console.log(' >> autocomplete: ', this.autocomplete);
+        }
+      },
+
       /**
        * Performance a search using for `query` for the search term.
        *
        * @method search
        */
       search: function() {
-        if (this.query && this.map) {
+        console.log('## google-map-search.search() START ##', '>> query: ', this.query, '>> map: ', this.map, '>> input: ', this.input);
+        //input autocomplete
+        if (this.input && this.map) {
+          if (this.autocomplete == null) {
+            this.autocomplete = new google.maps.places.Autocomplete(this.$['pac-input']);
+            this.autocomplete.setTypes(['address']); //all=[], ['address'], ['establishment'], ['geocode']
+            console.log(' >> autocomplete: ', this.autocomplete);
+            this.autocomplete.bindTo('bounds', this.map);
+            //
+            var infowindow = new google.maps.InfoWindow();
+            var marker = new google.maps.Marker({
+              map: this.map,
+              anchorPoint: new google.maps.Point(0, -29)
+            });
+            //add listener on autocomplete
+
+            var that = this;
+            google.maps.event.addListener(this.autocomplete, 'place_changed', function() {
+              infowindow.close();
+              marker.setVisible(false);
+              var place = that.autocomplete.getPlace();
+              if (!place.geometry) {
+                return;
+              }
+              //setup result and trigger event
+              that.gotPlaceResult(place);
+              //
+
+              // TODO: move this into google-map-marker ??? If the place has a geometry, then present it on a map ???
+              if (place.geometry.viewport) {
+                that.map.fitBounds(place.geometry.viewport);
+              } else {
+                that.map.setCenter(place.geometry.location);
+                that.map.setZoom(17);  // Why 17? Because it looks good.
+              }
+              marker.setIcon(/** @type {google.maps.Icon} */({
+                url: place.icon,
+                size: new google.maps.Size(71, 71),
+                origin: new google.maps.Point(0, 0),
+                anchor: new google.maps.Point(17, 34),
+                scaledSize: new google.maps.Size(35, 35)
+              }));
+              marker.setPosition(place.geometry.location);
+              marker.setVisible(true);
+
+              var address = '';
+              if (place.address_components) {
+                address = [
+                  (place.address_components[0] && place.address_components[0].short_name || ''),
+                  (place.address_components[1] && place.address_components[1].short_name || ''),
+                  (place.address_components[2] && place.address_components[2].short_name || '')
+                ].join(' ');
+              }
+
+              infowindow.setContent('<div><strong>' + place.name + '</strong><br>' + address);
+              infowindow.open(that.map, marker);
+            });
+          }
+        }
+
+        //non-input: Perform a search using for `query` for the search term.
+        if (!this.input && this.query && this.map) {
           var places = new google.maps.places.PlacesService(this.map);
           places.textSearch({query: this.query}, this.gotResults.bind(this));
         }
+
+        console.log('## google-map-search.search() END ##');
+      },
+
+      gotPlaceResult: function(place, status) {
+        this.result = {
+          latitude: place.geometry.location.lat(),
+          longitude: place.geometry.location.lng(),
+          show: true
+        }
+        this.fire('google-map-search-result', this.result);
       },
 
       gotResults: function(results, status) {
